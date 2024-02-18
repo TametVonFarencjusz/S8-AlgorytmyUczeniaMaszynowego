@@ -1,6 +1,9 @@
 import pandas as p
 import numpy as np
 import random
+from sklearn.neural_network import MLPClassifier
+from sklearn.ensemble import RandomForestClassifier
+from sklearn.naive_bayes import GaussianNB
 
 class Data:
     #values
@@ -93,6 +96,7 @@ class DataML:
                     self.values.append(Data(vals, vals_str[0]).normalize(self.info_max))
             #print(self.values)
             with open("Data/wineW.data") as f:
+            ##with open("Data/wineTe.data") as f:
                 for line in f:
                     line = line.replace("\n","")
                     vals_str = line.split(",")
@@ -100,6 +104,7 @@ class DataML:
                     self.values_valid.append(Data(vals, vals_str[0]).normalize(self.info_max))
             #print(self.values_valid)
             with open("Data/wineTe.data") as f:
+            ##with open("Data/wineW.data") as f:
                 for line in f:
                     line = line.replace("\n","")
                     vals_str = line.split(",")
@@ -151,7 +156,7 @@ class DataML:
 
         return Data(vals, class_name)
 
-    def matrixknn(self, k):
+    def matrixknn(self, k, show = False):
         #Confusion Matrix
         list = [(class1, class2) for class1 in self.info_classes for class2 in self.info_classes]
         dict_matrix = dict((value, 0) for value in list)
@@ -166,14 +171,6 @@ class DataML:
 
         #data.class_name == iris_data.values_test[i].class_name:
         #print(dictMatrix)
-
-        for i,ele in enumerate(list):
-            print(dict_matrix[ele], end="")
-            if i%len(self.info_classes) == len(self.info_classes)-1:
-                print()
-            else:
-                print(" | ", end="")
-
         #Precision
         correct = 0
         wrong = 0
@@ -182,8 +179,18 @@ class DataML:
                 correct += dict_matrix[ele]
             else:
                 wrong += dict_matrix[ele]
-        print(int(correct*10000/(wrong+correct))/100, end="%\n")
+        prec = int(correct*10000/(wrong+correct))/100
 
+        if show:
+            print(prec, end="%\n")
+            for i,ele in enumerate(list):
+                print(dict_matrix[ele], end="")
+                if i%len(self.info_classes) == len(self.info_classes)-1:
+                    print()
+                else:
+                    print(" | ", end="")
+
+        return prec
 
     def perceptron_learn(self, learning_rate = 0.1, iteration = 10):
         weight = [0 for ele in range(4+1)]
@@ -243,10 +250,10 @@ class DataML:
         print(int(correct*10000/(wrong+correct))/100, end="%\n")
 
 
-    def matrix_one_vs_all(self):
+    def matrix_one_vs_all(self, choose_type = 0):
         weights = [(class_name, self.perceptron_learn_2(class_name)) for class_name in self.info_classes]
-        for weight in weights:
-            print(weight)
+        #for weight in weights:
+        #    print(weight)
 
         correct = 0
         wrong = 0
@@ -254,7 +261,7 @@ class DataML:
         list = [(class1, class2) for class1 in self.info_classes for class2 in self.info_classes]
         dict_matrix = dict((value, 0) for value in list)
         for val in self.values_test:
-            data = self.perceptron_2(val.values, weights)
+            data = self.perceptron_2(val.values, weights, choose_type = choose_type)
             if data.class_name != -1:
                 dict_matrix[(data.class_name, val.class_name)] += 1
             else:
@@ -274,6 +281,7 @@ class DataML:
             else:
                 wrong += dict_matrix[ele]
         print(int(correct*10000/(wrong+correct))/100, end="%\n")
+
 
     def perceptron_learn_2(self, the_one, learning_rate=1, iteration=500):
         weights = [0 for ele in range(len(self.info_max) + 1)]
@@ -296,19 +304,25 @@ class DataML:
                     else:
                         weights[i] = weights[i] + learning_rate * correct_value * val.values[i]
             if not change:
-                print("Break")
                 break
         #print(weights)
         return weights
 
-    def perceptron_2(self, values, weights):
+
+    def perceptron_2(self, values, weights, choose_type = 0):
         predict = []
         for weight in weights:
-            predicted_output = np.sign(np.sign(sum([weight[1][i] * values[i] for i in range(len(weight[1]) - 1)]) + weight[1][-1]))
-            predict.append((weight[0], predicted_output))
+            predicted_output = np.sign(np.sign(sum([weight[1][i] * values[i] for i in range(len(weight[1]) - 1)]) + weight[1][-1]) + 0.1)
+            predicted_output_2 = sum([weight[1][i] * values[i] for i in range(len(weight[1]) - 1)]) + weight[1][-1]
+            predict.append((weight[0], predicted_output, predicted_output_2))
         #print(predict)
 
         output = []
+
+        if choose_type == 1:
+            best = sorted(predict, key=lambda value: value[2], reverse=True)[0]
+            #print(predict)
+            return  Data(values, best[0])
 
         counter = 0
         for ele in predict:
@@ -326,3 +340,69 @@ class DataML:
             return Data(values, random.choice(self.info_classes)[0])
 
         return Data(values, output[0][0])
+
+    def scikit_multilayer_perceptron(self, show = True, valide=False, alpha = 1e-5, iter=10000, hidden_layer_sizes = (10,), solver='lbfgs'):
+        X = [val.values for val in self.values]
+        y = [val.class_name for val in self.values]
+
+        clf = MLPClassifier(solver=solver, alpha=alpha, hidden_layer_sizes= hidden_layer_sizes, random_state = 1, max_iter=iter)
+
+        clf.fit(X, y)
+        to_predict = [val.values for val in self.values_valid] if valide else [val.values for val in self.values_test]
+        pred = clf.predict(to_predict)
+
+        return self.scikit_matrix(pred, show)
+
+
+    def scikit_random_forest(self, show = True, valide=False, max_depth=None, n_estimators=1000):
+        X = [val.values for val in self.values]
+        y = [val.class_name for val in self.values]
+
+        clf = RandomForestClassifier(max_depth=max_depth, n_estimators=n_estimators)
+
+        clf.fit(X, y)
+        to_predict = [val.values for val in self.values_valid] if valide else [val.values for val in self.values_test]
+        pred = clf.predict(to_predict)
+
+        return self.scikit_matrix(pred, show)
+
+    def scikit_bayes(self, show=True, valide=False, var_smoothing=1e-9):
+        X = [val.values for val in self.values]
+        y = [val.class_name for val in self.values]
+
+        clf = GaussianNB(var_smoothing=var_smoothing)
+
+        clf.fit(X, y)
+        to_predict = [val.values for val in self.values_valid] if valide else [val.values for val in self.values_test]
+        pred = clf.predict(to_predict)
+
+        return self.scikit_matrix(pred, show)
+
+    def scikit_matrix(self, pred, show = False):
+        # Matrix
+        list = [(class1, class2) for class1 in self.info_classes for class2 in self.info_classes]
+        dict_matrix = dict((value, 0) for value in list)
+
+        for i in range(len(pred)):
+            dict_matrix[(self.values_test[i].class_name, pred[i])] += 1
+
+        # Precision
+        correct = 0
+        wrong = 0
+        for ele in list:
+            if ele[0] == ele[1]:
+                correct += dict_matrix[ele]
+            else:
+                wrong += dict_matrix[ele]
+        prec = int(correct * 10000 / (wrong + correct)) / 100
+
+        if show:
+            print(prec, end="%\n")
+            for i, ele in enumerate(list):
+                print(dict_matrix[ele], end="")
+                if i % len(self.info_classes) == len(self.info_classes) - 1:
+                    print()
+                else:
+                    print(" | ", end="")
+
+        return prec
